@@ -235,7 +235,8 @@ async fn consume_secret(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let ip = mask_ip(addr.ip());
+    let ip_addr = forwarded_ip(&headers).unwrap_or_else(|| addr.ip());
+    let ip = mask_ip(ip_addr);
     rec.retrieved_at = Some(Utc::now());
     rec.retrieved_ip = Some(ip.clone());
     rec.retrieved_ua = Some(ua.clone());
@@ -317,6 +318,35 @@ fn mask_ip(ip: std::net::IpAddr) -> String {
         }
         std::net::IpAddr::V6(_) => "ipv6".to_string(),
     }
+}
+
+fn forwarded_ip(headers: &axum::http::HeaderMap) -> Option<std::net::IpAddr> {
+    // Prefer first IP in X-Forwarded-For
+    if let Some(val) = headers.get("x-forwarded-for") {
+        if let Ok(text) = val.to_str() {
+            if let Some(first) = text.split(',').next() {
+                if let Ok(ip) = first.trim().parse() {
+                    return Some(ip);
+                }
+            }
+        }
+    }
+    // Fallback to Forwarded: for="ip"
+    if let Some(val) = headers.get("forwarded") {
+        if let Ok(text) = val.to_str() {
+            for entry in text.split(';').flat_map(|s| s.split(',')) {
+                let trimmed = entry.trim();
+                if let Some(rest) = trimmed.strip_prefix("for=") {
+                    let candidate = rest.trim_matches('"');
+                    let candidate = candidate.split(':').next().unwrap_or(candidate);
+                    if let Ok(ip) = candidate.parse() {
+                        return Some(ip);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn load_kek() -> [u8; 32] {
