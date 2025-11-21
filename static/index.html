@@ -40,6 +40,16 @@
   <script>
     const { useEffect, useState, useMemo } = React;
 
+    const copyWithFlash = async (text, setter) => {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+            }
+        } catch (_) {}
+        setter(true);
+        setTimeout(() => setter(false), 1000);
+    };
+
     const api = {
       async createSecret(body) {
         const res = await fetch('/api/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -115,18 +125,20 @@
     }
 
     function ResultCard({ result }) {
+        const [copiedLink, setCopiedLink] = useState(false);
+        const [copiedPwd, setCopiedPwd] = useState(false);
         return React.createElement('div', { className: 'card' },
             React.createElement('h3', null, '链接已生成'),
             React.createElement('p', { className: 'muted' }, '复制下面的 URL 发送给 Bob：'),
             React.createElement('div', { className: 'secret-box' }, result.url),
             React.createElement('div', { className: 'row', style: { marginTop: 12 } },
-                React.createElement('button', { className: 'secondary', onClick: () => navigator.clipboard && navigator.clipboard.writeText(result.url) }, '复制链接')
+                React.createElement('button', { className: 'secondary', style: copiedLink ? { background: '#16a34a', color: '#0c0c0c', borderColor: '#15803d' } : {}, onClick: () => copyWithFlash(result.url, setCopiedLink) }, copiedLink ? 'Copied' : '复制链接')
             ),
             React.createElement('div', { className: 'status', style: { marginTop: 12 } },
                 React.createElement('div', null, '请保存你的明文密码（Alice 需自留解密用）：'),
                 React.createElement('div', { className: 'secret-box', style: { marginTop: 8 } }, result.password),
                 React.createElement('div', { className: 'row', style: { marginTop: 8 } },
-                    React.createElement('button', { className: 'secondary', onClick: () => navigator.clipboard && navigator.clipboard.writeText(result.password) }, '复制明文密码')
+                    React.createElement('button', { className: 'secondary', style: copiedPwd ? { background: '#16a34a', color: '#0c0c0c', borderColor: '#15803d' } : {}, onClick: () => copyWithFlash(result.password, setCopiedPwd) }, copiedPwd ? 'Copied' : '复制明文密码')
                 )
             ),
             React.createElement('div', { className: 'status' },
@@ -144,6 +156,7 @@
         const [loading, setLoading] = useState(false);
         const [secret, setSecret] = useState(null);
         const [error, setError] = useState(null);
+        const [copiedBob, setCopiedBob] = useState(false);
 
         useEffect(() => {
             (async () => {
@@ -180,7 +193,7 @@
                 React.createElement('h1', null, '密码'),
                 React.createElement('div', { className: 'secret-box' }, secret),
                 React.createElement('div', { className: 'row', style: { marginTop: 10 } },
-                    React.createElement('button', { className: 'primary', onClick: () => navigator.clipboard && navigator.clipboard.writeText(secret) }, '复制密码')
+                    React.createElement('button', { className: 'primary', style: copiedBob ? { background: '#16a34a', color: '#0c0c0c' } : {}, onClick: () => copyWithFlash(secret, setCopiedBob) }, copiedBob ? 'Copied' : '复制密码')
                 ),
                 React.createElement('p', { className: 'muted' }, '请立即复制并在使用后关闭页面。')
             );

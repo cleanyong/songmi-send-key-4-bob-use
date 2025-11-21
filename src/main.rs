@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use aes_gcm::{aead::Aead, aead::KeyInit, Aes256Gcm, Nonce};
 use axum::{
     extract::{ConnectInfo, Path, State},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -131,6 +131,8 @@ async fn main() {
         .route("/api/new", post(create_secret))
         .route("/api/s/:token/meta", get(get_status))
         .route("/api/s/:token/consume", post(consume_secret))
+        .route("/s/:token", get(index_html))
+        .route("/s/:token/*rest", get(index_html))
         .nest_service("/", static_dir)
         .with_state(state)
         .layer(
@@ -149,6 +151,13 @@ async fn main() {
 
 fn fallback_index() -> ServeFile {
     ServeFile::new("static/index.html")
+}
+
+async fn index_html() -> impl IntoResponse {
+    match tokio::fs::read("static/index.html").await {
+        Ok(body) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn create_secret(
