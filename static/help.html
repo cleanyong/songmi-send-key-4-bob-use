@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>送蜜 · 使用说明</title>
+  <style>
+    :root { color-scheme: light; font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0d1117; color: #e6edf3; }
+    body { margin: 0; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
+    .shell { width: min(900px, 92vw); margin: 36px; background: linear-gradient(145deg, #0f172a 0%, #111827 55%, #0f172a 100%); border: 1px solid #1f2937; border-radius: 16px; padding: 28px; box-shadow: 0 20px 50px rgba(0,0,0,0.35); }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 18px 0 8px; }
+    p { color: #9ca3af; margin: 0 0 10px; line-height: 1.6; }
+    ul { color: #cbd5e1; padding-left: 18px; }
+    a { color: #7dd3fc; }
+    .back { display: inline-block; margin-bottom: 16px; padding: 8px 12px; border-radius: 10px; border: 1px solid #1f2937; background: #0b1220; color: #7dd3fc; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <a href="/" class="back">← 返回</a>
+    <h1>送蜜 · 使用说明</h1>
+    <p>送蜜是一次性密码传递服务，首次打开即销毁，随附泄露检测提示。</p>
+
+    <h2>快速步骤</h2>
+    <ul>
+      <li><strong>Alice</strong> 在首页生成一次性密码（可自定义或随机），设置有效期，复制链接 + 记下明文密码。</li>
+      <li>将链接发送给 <strong>Bob</strong>（任意渠道）。</li>
+      <li><strong>Bob</strong> 打开链接，点击“确认提取”，看到一次性密码并复制。</li>
+      <li>Bob 用该密码加密文件/消息发回 Alice；Alice 用已保存的明文密码解密。</li>
+    </ul>
+
+    <h2>泄露检测</h2>
+    <ul>
+      <li>链接仅首访可见密码；后续访问显示“已被读取”，并提示最初访问的 IP/UA/时间（IP 脱敏）。</li>
+      <li>若看到提示且非本人操作，请重新生成密码。</li>
+    </ul>
+
+    <h2>安全设计</h2>
+    <ul>
+      <li>服务端不存明文：密码使用 AES-256-GCM 加密存储，KEK 通过环境变量 <code>SONGMI_KEK_B64</code> 注入。</li>
+      <li>一次性读取：首次读取时原子标记并返回；之后只显示访问信息。</li>
+      <li>高熵 token：随机生成不可枚举；可配合网关限流。</li>
+      <li>TTL 管理：到期自动清理；也会周期性清除过期条目。</li>
+    </ul>
+
+    <h2>口头确认（防篡改）</h2>
+    <p>生成时提供长度、前/后缀、字符类别等提示，Alice 可口头告知 Bob 验证密码是否被替换。</p>
+
+    <h2>部署提示</h2>
+    <ul>
+      <li>设置环境变量：<code>PUBLIC_BASE</code>（外部可访问的 HTTPS 域名）、<code>SONGMI_KEK_B64</code>（32 字节 Base64 KEK）。</li>
+      <li>反向代理需透传 <code>X-Forwarded-For</code>/<code>Forwarded</code> 以记录访问者 IP（脱敏存储）。</li>
+    </ul>
+  </div>
+</body>
+</html>

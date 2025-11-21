@@ -131,6 +131,7 @@ async fn main() {
         .route("/api/new", post(create_secret))
         .route("/api/s/:token/meta", get(get_status))
         .route("/api/s/:token/consume", post(consume_secret))
+        .route("/help", get(help_html))
         .route("/s/:token", get(index_html))
         .route("/s/:token/*rest", get(index_html))
         .nest_service("/", static_dir)
@@ -155,6 +156,13 @@ fn fallback_index() -> ServeFile {
 
 async fn index_html() -> impl IntoResponse {
     match tokio::fs::read("static/index.html").await {
+        Ok(body) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn help_html() -> impl IntoResponse {
+    match tokio::fs::read("static/help.html").await {
         Ok(body) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }

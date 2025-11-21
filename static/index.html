@@ -35,6 +35,7 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 </head>
 <body>
+  <a href="/help" class="help-link" aria-label="Help">Help</a>
   <div id="root"></div>
 
   <script>
@@ -221,5 +222,9 @@
 
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
+  <style>
+    .help-link { position: fixed; top: 16px; right: 16px; padding: 8px 12px; border-radius: 999px; border: 1px solid #1f2937; background: #0b1220; color: #7dd3fc; text-decoration: none; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+    .help-link:hover { background: #111827; }
+  </style>
 </body>
 </html>
