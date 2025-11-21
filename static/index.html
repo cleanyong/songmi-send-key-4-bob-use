@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>送蜜 | 一次性密码</title>
+  <link rel="preconnect" href="https://unpkg.com" />
+  <style>
+    :root { color-scheme: light; font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0d1117; color: #e6edf3; }
+    body { margin: 0; padding: 0; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
+    .shell { width: min(960px, 92vw); margin-top: 40px; background: linear-gradient(145deg, #0f172a 0%, #111827 55%, #0f172a 100%); border: 1px solid #1f2937; border-radius: 16px; padding: 28px; box-shadow: 0 20px 50px rgba(0,0,0,0.35); }
+    h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: 0.5px; }
+    p { color: #9ca3af; margin-top: 0; }
+    input, select, button, textarea { font: inherit; }
+    label { display: block; color: #cbd5e1; margin-bottom: 6px; font-size: 14px; }
+    .field { margin-bottom: 18px; }
+    .row { display: flex; gap: 10px; }
+    .row > * { flex: 1; }
+    input[type="text"], select { width: 100%; background: #0b1220; border: 1px solid #1f2937; color: #e6edf3; padding: 10px 12px; border-radius: 10px; }
+    button { cursor: pointer; border: none; border-radius: 10px; padding: 12px 16px; font-weight: 600; transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.25s ease; }
+    button.primary { background: linear-gradient(135deg, #fb8c00, #ec4899); color: #0c0c0c; box-shadow: 0 12px 30px rgba(255,136,0,0.25); }
+    button.secondary { background: #111827; color: #e5e7eb; border: 1px solid #1f2937; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    .card { margin-top: 20px; border: 1px solid #1f2937; border-radius: 12px; padding: 14px; background: #0b1220; }
+    .muted { color: #9ca3af; font-size: 14px; }
+    code { background: #111827; padding: 2px 6px; border-radius: 6px; color: #facc15; }
+    a, a:visited { color: #7dd3fc; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(236, 72, 153, 0.12); color: #fbcfe8; font-size: 12px; letter-spacing: 0.4px; }
+    .status { margin: 14px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid #1f2937; background: rgba(125, 211, 252, 0.08); color: #7dd3fc; }
+    .error { background: rgba(248, 113, 113, 0.1); color: #fecaca; border-color: rgba(248, 113, 113, 0.5); }
+    .secret-box { font-size: 20px; letter-spacing: 0.8px; padding: 12px; border-radius: 12px; background: #020617; border: 1px solid #1f2937; word-break: break-all; }
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    const { useEffect, useState, useMemo } = React;
+
+    const api = {
+      async createSecret(body) {
+        const res = await fetch('/api/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!res.ok) throw await res.json();
+        return res.json();
+      },
+      async getMeta(token) {
+        const res = await fetch(`/api/s/${token}/meta`);
+        if (!res.ok) throw await res.json();
+        return res.json();
+      },
+      async consume(token) {
+        const res = await fetch(`/api/s/${token}/consume`, { method: 'POST' });
+        if (!res.ok) throw await res.json();
+        return res.json();
+      }
+    };
+
+    function AliceView() {
+        const [password, setPassword] = useState('');
+        const [ttl, setTtl] = useState(3600);
+        const [loading, setLoading] = useState(false);
+        const [result, setResult] = useState(null);
+        const [error, setError] = useState(null);
+
+        const genRandom = () => {
+            setPassword('');
+            submit(true);
+        };
+
+        const submit = async (forceRandom = false) => {
+            setLoading(true); setError(null); setResult(null);
+            try {
+                const body = { ttl: Number(ttl) };
+                if (!forceRandom && password.trim().length > 0) body.password = password.trim();
+                const data = await api.createSecret(body);
+                setResult(data);
+            } catch (e) {
+                setError(e.error || 'Request failed');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        return React.createElement('div', null,
+            React.createElement('div', { className: 'pill' }, 'Alice · 创建并分享'),
+            React.createElement('h1', null, '送蜜 · 一次性密码'),
+            React.createElement('p', null, '生成一次性密码，复制专用链接发送给 Bob。首次打开即销毁。'),
+            React.createElement('div', { className: 'card' },
+                React.createElement('div', { className: 'field' },
+                    React.createElement('label', null, '自定义密码（可为空，系统自动生成）'),
+                    React.createElement('input', { type: 'text', value: password, onChange: e => setPassword(e.target.value), placeholder: '留空自动生成高强度密码' })
+                ),
+                React.createElement('div', { className: 'row field' },
+                    React.createElement('div', null,
+                        React.createElement('label', null, '有效期 TTL'),
+                        React.createElement('select', { value: ttl, onChange: e => setTtl(e.target.value) },
+                            React.createElement('option', { value: 300 }, '5 分钟'),
+                            React.createElement('option', { value: 1800 }, '30 分钟'),
+                            React.createElement('option', { value: 3600 }, '1 小时'),
+                            React.createElement('option', { value: 86400 }, '24 小时 (max)')
+                        )
+                    ),
+                    React.createElement('div', { className: 'row', style: { alignItems: 'flex-end' } },
+                        React.createElement('button', { className: 'secondary', onClick: genRandom, disabled: loading }, '随机生成'),
+                        React.createElement('button', { className: 'primary', onClick: () => submit(false), disabled: loading }, loading ? '生成中…' : '生成链接')
+                    )
+                )
+            ),
+            error && React.createElement('div', { className: 'status error' }, error.toString()),
+            result && React.createElement(ResultCard, { result })
+        );
+    }
+
+    function ResultCard({ result }) {
+        return React.createElement('div', { className: 'card' },
+            React.createElement('h3', null, '链接已生成'),
+            React.createElement('p', { className: 'muted' }, '复制下面的 URL 发送给 Bob：'),
+            React.createElement('div', { className: 'secret-box' }, result.url),
+            React.createElement('div', { className: 'row', style: { marginTop: 12 } },
+                React.createElement('button', { className: 'secondary', onClick: () => navigator.clipboard && navigator.clipboard.writeText(result.url) }, '复制链接')
+            ),
+            React.createElement('div', { className: 'status', style: { marginTop: 12 } },
+                React.createElement('div', null, '请保存你的明文密码（Alice 需自留解密用）：'),
+                React.createElement('div', { className: 'secret-box', style: { marginTop: 8 } }, result.password),
+                React.createElement('div', { className: 'row', style: { marginTop: 8 } },
+                    React.createElement('button', { className: 'secondary', onClick: () => navigator.clipboard && navigator.clipboard.writeText(result.password) }, '复制明文密码')
+                )
+            ),
+            React.createElement('div', { className: 'status' },
+                React.createElement('div', null, '口头确认信息：'),
+                React.createElement('div', null, `长度: ${result.verify_hint.length}`),
+                React.createElement('div', null, `前缀: ${result.verify_hint.prefix} · 后缀: ${result.verify_hint.suffix}`),
+                React.createElement('div', null, `字符类别: ${result.verify_hint.classes}`)
+            )
+        );
+    }
+
+    function BobView({ token }) {
+        const [meta, setMeta] = useState(null);
+        const [message, setMessage] = useState('');
+        const [loading, setLoading] = useState(false);
+        const [secret, setSecret] = useState(null);
+        const [error, setError] = useState(null);
+
+        useEffect(() => {
+            (async () => {
+                try {
+                    const data = await api.getMeta(token);
+                    setMeta(data);
+                } catch (e) {
+                    setError(e.error || '链接无效或已过期');
+                }
+            })();
+        }, [token]);
+
+        const confirm = async () => {
+            setLoading(true); setError(null); setMessage('');
+            try {
+                const data = await api.consume(token);
+                if (data.password) setSecret(data.password);
+                if (data.retrieved && data.first_visitor) {
+                    setMessage(`已被读取 · IP ${data.first_visitor.ip || 'unknown'} · UA ${data.first_visitor.ua || 'unknown'}`);
+                }
+            } catch (e) {
+                setError(e.error || '无法提取');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (error) return React.createElement('div', { className: 'status error' }, error);
+        if (!meta) return React.createElement('div', { className: 'status' }, '正在加载链接状态…');
+
+        if (secret) {
+            return React.createElement('div', null,
+                React.createElement('div', { className: 'pill' }, 'Bob · 密码已提取'),
+                React.createElement('h1', null, '密码'),
+                React.createElement('div', { className: 'secret-box' }, secret),
+                React.createElement('div', { className: 'row', style: { marginTop: 10 } },
+                    React.createElement('button', { className: 'primary', onClick: () => navigator.clipboard && navigator.clipboard.writeText(secret) }, '复制密码')
+                ),
+                React.createElement('p', { className: 'muted' }, '请立即复制并在使用后关闭页面。')
+            );
+        }
+
+        return React.createElement('div', null,
+            React.createElement('div', { className: 'pill' }, 'Bob · 提取密码'),
+            React.createElement('h1', null, '确认读取'),
+            React.createElement('p', null, '这是一次性密码链接。点击确认后，密码将显示且链接即失效。'),
+            message && React.createElement('div', { className: 'status error' }, message),
+            React.createElement('button', { className: 'primary', onClick: confirm, disabled: loading }, loading ? '提取中…' : '确认提取'),
+            meta.retrieved && React.createElement('div', { className: 'status error', style: { marginTop: 16 } }, '该密码先前已被读取，如非本人请提醒发送方重新生成。')
+        );
+    }
+
+    function App() {
+        const token = useMemo(() => {
+            const parts = window.location.pathname.split('/').filter(Boolean);
+            if (parts[0] === 's' && parts[1]) return parts[1];
+            return null;
+        }, []);
+
+        return React.createElement('div', { className: 'shell' }, token ? React.createElement(BobView, { token }) : React.createElement(AliceView));
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>
