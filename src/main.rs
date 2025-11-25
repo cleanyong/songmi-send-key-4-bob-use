@@ -22,6 +22,7 @@ use uuid::Uuid;
 static KEK_ENV: &str = "SONGMI_KEK_B64";
 static DEFAULT_TTL_SECONDS: u64 = 3600;
 static MAX_TTL_SECONDS: u64 = 86_400; // 24h safeguard
+static MAX_PASSWORD_CHARS: usize = 100;
 
 #[derive(Clone)]
 struct AppState {
@@ -173,6 +174,14 @@ async fn create_secret(
     Json(payload): Json<NewSecretRequest>,
 ) -> Result<Json<NewSecretResponse>, AppError> {
     let ttl = payload.ttl.unwrap_or(DEFAULT_TTL_SECONDS).min(MAX_TTL_SECONDS);
+    if let Some(ref pw) = payload.password {
+        if pw.chars().count() > MAX_PASSWORD_CHARS {
+            return Err(AppError::BadRequest(format!(
+                "password too long (max {} characters)",
+                MAX_PASSWORD_CHARS
+            )));
+        }
+    }
     let password = payload
         .password
         .unwrap_or_else(|| generate_password(20));
