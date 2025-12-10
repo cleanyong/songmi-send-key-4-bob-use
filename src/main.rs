@@ -1,26 +1,31 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
-use aes_gcm::{aead::Aead, aead::KeyInit, Aes256Gcm, Nonce};
+use aes_gcm::{Aes256Gcm, Nonce, aead::Aead, aead::KeyInit};
 use axum::{
+    Json, Router,
     extract::{ConnectInfo, Path, State},
     http::{StatusCode, header},
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use rand::{distributions::Alphanumeric, rngs::OsRng, Rng, RngCore};
+use rand::{Rng, RngCore, distributions::Alphanumeric, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tower::ServiceBuilder;
-use tower_http::{cors::CorsLayer, services::{ServeDir, ServeFile}, trace::TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+    trace::TraceLayer,
+};
 use uuid::Uuid;
 
 static KEK_ENV: &str = "SONGMI_KEK_B64";
 static DEFAULT_TTL_SECONDS: u64 = 3600;
+static MIN_TTL_SECONDS: u64 = 60;
 static MAX_TTL_SECONDS: u64 = 86_400; // 24h safeguard
 static MAX_PASSWORD_CHARS: usize = 100;
 
@@ -121,7 +126,8 @@ async fn main() {
     let state = AppState {
         storage: Arc::new(Mutex::new(HashMap::new())),
         kek: Arc::new(kek),
-        public_base: std::env::var("PUBLIC_BASE").unwrap_or_else(|_| "http://127.0.0.1:3001".to_string()),
+        public_base: std::env::var("PUBLIC_BASE")
+            .unwrap_or_else(|_| "http://127.0.0.1:3001".to_string()),
     };
 
     tokio::spawn(cleanup_task(state.clone()));
@@ -157,14 +163,24 @@ fn fallback_index() -> ServeFile {
 
 async fn index_html() -> impl IntoResponse {
     match tokio::fs::read("static/index.html").await {
-        Ok(body) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response(),
+        Ok(body) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            body,
+        )
+            .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
 async fn help_html() -> impl IntoResponse {
     match tokio::fs::read("static/help.html").await {
-        Ok(body) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response(),
+        Ok(body) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            body,
+        )
+            .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -173,19 +189,10 @@ async fn create_secret(
     State(state): State<AppState>,
     Json(payload): Json<NewSecretRequest>,
 ) -> Result<Json<NewSecretResponse>, AppError> {
-    let ttl = payload.ttl.unwrap_or(DEFAULT_TTL_SECONDS).min(MAX_TTL_SECONDS);
-    if let Some(ref pw) = payload.password {
-        if pw.chars().count() > MAX_PASSWORD_CHARS {
-            return Err(AppError::BadRequest(format!(
-                "password too long (max {} characters)",
-                MAX_PASSWORD_CHARS
-            )));
-        }
-    }
-    let password = payload
-        .password
-        .unwrap_or_else(|| generate_password(20));
-    let (ciphertext, nonce) = encrypt(&state.kek, password.as_bytes()).map_err(|_| AppError::Internal)?;
+    let ttl = validate_ttl(payload.ttl)?;
+    let password = validate_password(payload.password)?.unwrap_or_else(|| generate_password(20));
+    let (ciphertext, nonce) =
+        encrypt(&state.kek, password.as_bytes()).map_err(|_| AppError::Internal)?;
 
     let hint = build_hint(&password);
     let now = Utc::now();
@@ -206,7 +213,11 @@ async fn create_secret(
     state.storage.lock().await.insert(token.clone(), record);
 
     let url = format!("{}/s/{}", state.public_base.trim_end_matches('/'), token);
-    Ok(Json(NewSecretResponse { url, password, verify_hint: hint }))
+    Ok(Json(NewSecretResponse {
+        url,
+        password,
+        verify_hint: hint,
+    }))
 }
 
 async fn get_status(
@@ -267,7 +278,8 @@ async fn consume_secret(
     rec.retrieved_ip = Some(ip.clone());
     rec.retrieved_ua = Some(ua.clone());
 
-    let plaintext = decrypt(&state.kek, &rec.ciphertext, &rec.nonce).map_err(|_| AppError::Internal)?;
+    let plaintext =
+        decrypt(&state.kek, &rec.ciphertext, &rec.nonce).map_err(|_| AppError::Internal)?;
     let password = String::from_utf8_lossy(&plaintext).to_string();
     Ok(Json(ConsumeResponse::FirstRead {
         password,
@@ -294,7 +306,14 @@ fn generate_password(len: usize) -> String {
 fn build_hint(password: &str) -> VerifyHint {
     let length = password.chars().count();
     let prefix: String = password.chars().take(2).collect();
-    let suffix: String = password.chars().rev().take(2).collect::<Vec<_>>().into_iter().rev().collect();
+    let suffix: String = password
+        .chars()
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     let mut classes = 0;
     if password.chars().any(|c| c.is_ascii_lowercase()) {
         classes += 1;
@@ -315,6 +334,58 @@ fn build_hint(password: &str) -> VerifyHint {
         suffix,
         classes,
     }
+}
+
+fn validate_ttl(ttl: Option<u64>) -> Result<u64, AppError> {
+    let ttl = ttl.unwrap_or(DEFAULT_TTL_SECONDS);
+    if ttl == 0 {
+        return Err(AppError::BadRequest("ttl must be greater than 0".into()));
+    }
+    if ttl < MIN_TTL_SECONDS {
+        return Err(AppError::BadRequest(format!(
+            "ttl must be at least {} seconds",
+            MIN_TTL_SECONDS
+        )));
+    }
+    Ok(ttl.min(MAX_TTL_SECONDS))
+}
+
+fn validate_password(password: Option<String>) -> Result<Option<String>, AppError> {
+    let Some(pw) = password else {
+        return Ok(None);
+    };
+    let trimmed = pw.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::BadRequest("password cannot be empty".into()));
+    }
+    if trimmed.chars().count() > MAX_PASSWORD_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "password too long (max {} characters)",
+            MAX_PASSWORD_CHARS
+        )));
+    }
+    if pw.chars().any(is_invisible_char) {
+        return Err(AppError::BadRequest(
+            "password cannot contain whitespace or invisible characters".into(),
+        ));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+fn is_invisible_char(c: char) -> bool {
+    if c.is_control() || c.is_whitespace() {
+        return true;
+    }
+    matches!(
+        c,
+        '\u{00AD}' // soft hyphen
+            | '\u{034F}' // combining grapheme joiner
+            | '\u{180E}' // mongolian vowel separator
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{FEFF}'
+    )
 }
 
 fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<(Vec<u8>, [u8; 12]), AppError> {
